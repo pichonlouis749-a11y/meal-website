@@ -1,0 +1,104 @@
+[
+  {
+    "id": "salade-quinoa-citronnee",
+    "name": "Salade de quinoa citronnée",
+    "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=1200&q=80",
+    "ingredients": [
+      "180 g de quinoa",
+      "1 concombre",
+      "150 g de pois chiches cuits",
+      "80 g de feta",
+      "1 citron jaune",
+      "2 cuillères à soupe d'huile d'olive",
+      "Menthe fraîche, sel et poivre"
+    ],
+    "steps": [
+      "Rincer le quinoa puis le cuire dans deux fois son volume d'eau salée.",
+      "Couper le concombre en dés et émietter la feta.",
+      "Mélanger le quinoa refroidi, les pois chiches, le concombre et la feta.",
+      "Assaisonner avec le jus de citron, l'huile d'olive, la menthe, le sel et le poivre."
+    ],
+    "tags": [
+      "repas",
+      "rapide",
+      "végétarien",
+      "économique"
+    ],
+    "collection": "Semaine",
+    "publishedAt": "2026-06-20T10:00:00.000Z"
+  },
+  {
+    "id": "fondant-chocolat-simple",
+    "name": "Fondant au chocolat simple",
+    "imageUrl": "https://images.unsplash.com/photo-1606313564200-e75d5e30476c?auto=format&fit=crop&w=1200&q=80",
+    "ingredients": [
+      "200 g de chocolat noir",
+      "120 g de beurre",
+      "100 g de sucre",
+      "3 oeufs",
+      "60 g de farine",
+      "1 pincée de sel"
+    ],
+    "steps": [
+      "Faire fondre le chocolat et le beurre doucement.",
+      "Fouetter les oeufs avec le sucre jusqu'à ce que le mélange blanchisse.",
+      "Ajouter le chocolat fondu, puis la farine et le sel.",
+      "Verser dans un moule et cuire 18 minutes à 180°C."
+    ],
+    "tags": [
+      "dessert",
+      "économique"
+    ],
+    "collection": "Desserts",
+    "publishedAt": "2026-06-22T15:30:00.000Z"
+  },
+  {
+    "id": "poulet-riz-proteine",
+    "name": "Bol poulet, riz et légumes",
+    "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1200&q=80",
+    "ingredients": [
+      "2 filets de poulet",
+      "160 g de riz complet",
+      "1 brocoli",
+      "2 carottes",
+      "1 cuillère à soupe de sauce soja",
+      "1 cuillère à soupe d'huile d'olive",
+      "Paprika, ail, sel et poivre"
+    ],
+    "steps": [
+      "Cuire le riz complet selon les indications du paquet.",
+      "Détailler le brocoli et les carottes, puis les cuire à la vapeur.",
+      "Assaisonner le poulet et le faire dorer à la poêle.",
+      "Assembler le bol avec le riz, les légumes, le poulet et un filet de sauce soja."
+    ],
+    "tags": [
+      "repas",
+      "protéiné",
+      "batch cooking"
+    ],
+    "collection": "Recettes protéinées",
+    "publishedAt": "2026-06-24T11:45:00.000Z"
+  },
+  {
+    "id": "lasagnes-froide-cbd080",
+    "name": "Lasagnes froide",
+    "imageUrl": "https://img.cuisineaz.com/1200x1200/2018/03/19/i136598-lasagnes-au-saumon-epinard-et-ricotta-maison.jpeg",
+    "ingredients": [
+      "1 pot de ricotta",
+      "2 à 3 càs de yaourt grecque",
+      "Zestes et jus de citron",
+      "3 à 4 feuilles de lasagnes fraiches",
+      "6 tranches de truite fumée",
+      "2 courgettes",
+      "1 à 2 càc de pesto par étage"
+    ],
+    "steps": [],
+    "referenceUrl": "https://www.instagram.com/p/DaA_khHCFyd/",
+    "tags": [
+      "repas",
+      "rapide"
+    ],
+    "collection": "",
+    "publishedAt": "2026-06-28T14:54:46.900Z"
+  }
+]
