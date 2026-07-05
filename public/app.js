@@ -25,7 +25,8 @@ const state = {
   pendingAuthAction: null,
   authMode: "signin",
   wizardStep: 0,
-  draft: blankDraft()
+  draft: blankDraft(),
+  editingRecipeId: null
 };
 
 const app = document.querySelector("#app");
@@ -128,8 +129,38 @@ function mapRecipe(row) {
   };
 }
 
-function canManageRecipe(recipe) {
+function canEditRecipe(recipe) {
+  return Boolean(state.user && (state.profile?.role === "admin" || recipe.authorId === state.user.id));
+}
+
+function canDeleteRecipe() {
   return Boolean(state.user && state.profile?.role === "admin");
+}
+
+function draftFromRecipe(recipe) {
+  return {
+    name: recipe.name || "",
+    imageUrl: recipe.imageUrl || "",
+    ingredients: recipe.ingredients?.length ? [...recipe.ingredients] : [""],
+    steps: recipe.steps?.length ? [...recipe.steps] : [""],
+    referenceUrl: recipe.referenceUrl || "",
+    tags: recipe.tags?.filter((tag) => tags.includes(tag)) || [],
+    collection: recipe.collection || ""
+  };
+}
+
+function startNewRecipe() {
+  state.editingRecipeId = null;
+  state.draft = blankDraft();
+  state.wizardStep = 0;
+  window.location.hash = "#/add";
+}
+
+function startRecipeEdit(recipe) {
+  state.editingRecipeId = recipe.id;
+  state.draft = draftFromRecipe(recipe);
+  state.wizardStep = 0;
+  window.location.hash = `#/edit/${encodeURIComponent(recipe.id)}`;
 }
 
 async function loadProfile() {
@@ -420,7 +451,8 @@ function renderDetail(id) {
           </div>
         </div>
         <a class="secondary-button full-width" href="#/">Retour aux recettes</a>
-        ${canManageRecipe(recipe) ? `<button class="danger-button full-width" id="deleteRecipeButton" type="button">Supprimer la recette</button>` : ""}
+        ${canEditRecipe(recipe) ? `<button class="secondary-button full-width" id="editRecipeButton" type="button">Modifier la recette</button>` : ""}
+        ${canDeleteRecipe(recipe) ? `<button class="danger-button full-width" id="deleteRecipeButton" type="button">Supprimer la recette</button>` : ""}
       </aside>
     </div>
 
@@ -447,6 +479,9 @@ function renderDetail(id) {
     ${referenceBlockTemplate(recipe)}
   `;
 
+  const editButton = document.querySelector("#editRecipeButton");
+  if (editButton) editButton.addEventListener("click", () => startRecipeEdit(recipe));
+
   const deleteButton = document.querySelector("#deleteRecipeButton");
   if (deleteButton) {
     deleteButton.addEventListener("click", async () => {
@@ -464,6 +499,30 @@ function renderDetail(id) {
       }
     });
   }
+}
+
+function renderEditWizard(id) {
+  const recipe = state.recipes.find((item) => item.id === id);
+  if (!recipe) {
+    app.innerHTML = `<div class="empty-state"><div><h2>Recette introuvable</h2><p class="muted">Elle a peut-être été supprimée.</p><p><a class="secondary-button" href="#/">Retour aux recettes</a></p></div></div>`;
+    return;
+  }
+
+  if (!canEditRecipe(recipe)) {
+    state.editingRecipeId = null;
+    state.draft = blankDraft();
+    state.wizardStep = 0;
+    app.innerHTML = `<div class="empty-state"><div><h2>Accès refusé</h2><p class="muted">Seul l’auteur de la recette ou l’admin peut la modifier.</p><p><a class="secondary-button" href="#/recipe/${encodeURIComponent(recipe.id)}">Retour à la recette</a></p></div></div>`;
+    return;
+  }
+
+  if (state.editingRecipeId !== recipe.id) {
+    state.editingRecipeId = recipe.id;
+    state.draft = draftFromRecipe(recipe);
+    state.wizardStep = 0;
+  }
+
+  renderWizard();
 }
 
 function referenceBlockTemplate(recipe) {
@@ -564,12 +623,16 @@ function normalizedDraft() {
 function renderWizard() {
   if (!state.user) {
     requestAuth(() => {
-      window.location.hash = "#/add";
+      window.location.hash = state.editingRecipeId ? `#/edit/${encodeURIComponent(state.editingRecipeId)}` : "#/add";
     });
     window.location.hash = "#/";
     return;
   }
 
+  const editingRecipe = state.editingRecipeId
+    ? state.recipes.find((recipe) => recipe.id === state.editingRecipeId)
+    : null;
+  const isEditing = Boolean(editingRecipe);
   const progress = ((state.wizardStep + 1) / stepLabels.length) * 100;
   const currentRequirement = stepRequirementLabel(state.wizardStep);
 
@@ -577,7 +640,7 @@ function renderWizard() {
     <section class="wizard-shell" aria-labelledby="wizardTitle">
       <div class="wizard-header">
         <div>
-          <p class="eyebrow">Nouvelle recette</p>
+          <p class="eyebrow">${isEditing ? "Modification de recette" : "Nouvelle recette"}</p>
           <div class="wizard-title-row">
             <h1 id="wizardTitle">${escapeHtml(stepLabels[state.wizardStep])}</h1>
             ${requirementBadge(state.wizardStep)}
@@ -604,7 +667,7 @@ function renderWizard() {
         <button class="secondary-button" id="previousStepButton" type="button" ${state.wizardStep === 0 ? "disabled" : ""}>Précédent</button>
         ${
           state.wizardStep === stepLabels.length - 1
-            ? `<button class="primary-button" id="publishButton" type="button">Publier la recette</button>`
+            ? `<button class="primary-button" id="publishButton" type="button">${isEditing ? "Sauvegarder les modifications" : "Publier la recette"}</button>`
             : `<button class="primary-button" id="nextStepButton" type="button">Suivant</button>`
         }
       </div>
@@ -777,7 +840,7 @@ function bindWizardEvents() {
   }
 
   const publishButton = document.querySelector("#publishButton");
-  if (publishButton) publishButton.addEventListener("click", publishRecipe);
+  if (publishButton) publishButton.addEventListener("click", saveRecipe);
 
   const nameInput = document.querySelector("#recipeName");
   if (nameInput) nameInput.addEventListener("input", (event) => (state.draft.name = event.target.value));
@@ -859,10 +922,24 @@ function bindWizardEvents() {
   });
 }
 
-async function publishRecipe() {
+async function saveRecipe() {
   const publishButton = document.querySelector("#publishButton");
   const wizardError = document.querySelector("#wizardError");
   const recipe = normalizedDraft();
+  const editingRecipe = state.editingRecipeId
+    ? state.recipes.find((item) => item.id === state.editingRecipeId)
+    : null;
+  const isEditing = Boolean(editingRecipe);
+
+  if (state.editingRecipeId && !editingRecipe) {
+    wizardError.textContent = "Cette recette est introuvable. Retourne au carnet puis réessaie.";
+    return;
+  }
+
+  if (isEditing && !canEditRecipe(editingRecipe)) {
+    wizardError.textContent = "Tu ne peux modifier que tes propres recettes.";
+    return;
+  }
 
   const requiredChecks = [
     [recipe.name, "Le nom de la recette est obligatoire."],
@@ -878,10 +955,9 @@ async function publishRecipe() {
 
   try {
     publishButton.disabled = true;
-    publishButton.textContent = "Publication...";
+    publishButton.textContent = isEditing ? "Sauvegarde..." : "Publication...";
 
     const payload = {
-      author_id: state.user.id,
       name: recipe.name,
       image_url: recipe.imageUrl || null,
       ingredients: recipe.ingredients,
@@ -891,24 +967,38 @@ async function publishRecipe() {
       collection: recipe.collection,
       is_published: true
     };
-    const { data, error } = await supabaseClient
-      .from("recipes")
-      .insert(payload)
-      .select("id, author_id, name, image_url, ingredients, steps, reference_url, tags, collection, created_at")
-      .single();
+    const query = isEditing
+      ? supabaseClient
+          .from("recipes")
+          .update(payload)
+          .eq("id", editingRecipe.id)
+          .select("id, author_id, name, image_url, ingredients, steps, reference_url, tags, collection, created_at")
+          .single()
+      : supabaseClient
+          .from("recipes")
+          .insert({ ...payload, author_id: state.user.id })
+          .select("id, author_id, name, image_url, ingredients, steps, reference_url, tags, collection, created_at")
+          .single();
+
+    const { data, error } = await query;
 
     if (error) throw error;
 
-    const createdRecipe = mapRecipe(data);
-    state.recipes.unshift(createdRecipe);
+    const savedRecipe = mapRecipe(data);
+    if (isEditing) {
+      state.recipes = state.recipes.map((item) => (item.id === savedRecipe.id ? savedRecipe : item));
+    } else {
+      state.recipes.unshift(savedRecipe);
+    }
+    state.editingRecipeId = null;
     state.draft = blankDraft();
     state.wizardStep = 0;
-    showToast("Recette publiée.");
-    window.location.hash = `#/recipe/${encodeURIComponent(createdRecipe.id)}`;
+    showToast(isEditing ? "Modifications sauvegardées." : "Recette publiée.");
+    window.location.hash = `#/recipe/${encodeURIComponent(savedRecipe.id)}`;
   } catch (error) {
     wizardError.textContent = error.message;
     publishButton.disabled = false;
-    publishButton.textContent = "Publier la recette";
+    publishButton.textContent = isEditing ? "Sauvegarder les modifications" : "Publier la recette";
   }
 }
 
@@ -1010,6 +1100,7 @@ async function handleAuthSubmit(event) {
 function route() {
   const hash = window.location.hash || "#/";
   const recipeMatch = hash.match(/^#\/recipe\/(.+)$/);
+  const editMatch = hash.match(/^#\/edit\/(.+)$/);
 
   if (!state.user) {
     renderLockedHome();
@@ -1018,7 +1109,15 @@ function route() {
   }
 
   if (hash === "#/" || hash === "#") renderHome();
-  else if (hash === "#/add") renderWizard();
+  else if (hash === "#/add") {
+    if (state.editingRecipeId) {
+      state.editingRecipeId = null;
+      state.draft = blankDraft();
+      state.wizardStep = 0;
+    }
+    renderWizard();
+  }
+  else if (editMatch) renderEditWizard(decodeURIComponent(editMatch[1]));
   else if (recipeMatch) renderDetail(decodeURIComponent(recipeMatch[1]));
   else renderHome();
 
@@ -1076,10 +1175,10 @@ function queueSessionSync(session) {
 
 addRecipeButton?.addEventListener("click", () => {
   if (state.user) {
-    window.location.hash = "#/add";
+    startNewRecipe();
   } else {
     requestAuth(() => {
-      window.location.hash = "#/add";
+      startNewRecipe();
     });
   }
 });
