@@ -107,6 +107,13 @@ img {
   gap: 10px;
 }
 
+.welcome-text {
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
 .primary-button,
 .secondary-button,
 .ghost-button,
@@ -921,6 +928,11 @@ select:focus {
   .top-actions,
   .top-actions button {
     width: 100%;
+  }
+
+  .welcome-text {
+    width: 100%;
+    white-space: normal;
   }
 
   .hero,

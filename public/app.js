@@ -46,6 +46,8 @@ const forgotPasswordButton = document.querySelector("#forgotPasswordButton");
 const toggleAuthModeButton = document.querySelector("#toggleAuthModeButton");
 const addRecipeButton = document.querySelector("#addRecipeButton");
 const adminStatusButton = document.querySelector("#adminStatusButton");
+const signOutButton = document.querySelector("#signOutButton");
+const userWelcome = document.querySelector("#userWelcome");
 const closeAdminDialog = document.querySelector("#closeAdminDialog");
 let searchDebounceTimer = null;
 
@@ -161,12 +163,21 @@ async function loadData() {
 function updateAdminUi() {
   if (!state.user) {
     adminStatusButton.textContent = "Connexion";
+    adminStatusButton.hidden = true;
+    addRecipeButton.hidden = true;
+    signOutButton.hidden = true;
+    userWelcome.hidden = true;
+    userWelcome.textContent = "";
     adminStatusButton.classList.remove("is-admin");
     return;
   }
 
   const label = state.profile?.display_name || state.user.email || "Compte";
-  adminStatusButton.textContent = label;
+  userWelcome.textContent = `Bienvenue ${label}`;
+  userWelcome.hidden = false;
+  adminStatusButton.hidden = true;
+  addRecipeButton.hidden = false;
+  signOutButton.hidden = false;
   adminStatusButton.classList.toggle("is-admin", state.profile?.role === "admin");
 }
 
@@ -869,8 +880,9 @@ function updateAuthDialog() {
     : isReset
       ? "Entre ton email et Supabase t'enverra un lien de réinitialisation."
       : "Connecte-toi avec ton email et ton mot de passe.";
-  authIdentifierLabel.textContent = isSignup ? "Email" : isReset ? "Email" : "Email";
-  adminEmail.placeholder = isSignup ? "ton@email.com" : "ton@email.com";
+  authIdentifierLabel.textContent = "Email";
+  adminEmail.placeholder = "ton@email.com";
+  adminEmail.autocomplete = isSignup || isReset ? "email" : "username";
   displayNameField.hidden = !isSignup;
   passwordField.hidden = isReset;
   adminPassword.required = !isReset;
@@ -983,9 +995,10 @@ addRecipeButton.addEventListener("click", () => {
 adminStatusButton.addEventListener("click", async () => {
   if (!state.user) {
     requestAuth(null);
-    return;
   }
+});
 
+signOutButton.addEventListener("click", async () => {
   await supabaseClient.auth.signOut();
   state.user = null;
   state.profile = null;
