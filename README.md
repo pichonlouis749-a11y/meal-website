@@ -66,7 +66,7 @@ Les règles de sécurité Supabase sont activées sur les deux tables.
 ## Fonctionnement des comptes
 
 - Les recettes sont visibles uniquement après connexion.
-- La connexion accepte un email directement. Elle accepte aussi un pseudo si la variable serveur `SUPABASE_SERVICE_ROLE_KEY` est configurée.
+- La connexion se fait avec email et mot de passe. Le pseudo sert uniquement à l’inscription et à l’affichage.
 - Le bouton “Ajouter une recette” demande une connexion si aucun compte n’est actif.
 - Après connexion, l’utilisateur peut publier une recette.
 - Le bouton de suppression apparaît seulement pour un admin.
@@ -99,7 +99,7 @@ Le formulaire d’ajout est guidé en 6 étapes :
 - Recherche : nom, ingrédient, tag ou collection.
 - Filtres : tags et collection.
 - Ajout : accessible après connexion.
-- Publication : visible publiquement après création.
+- Publication : visible par les utilisateurs connectés après création.
 - Suppression : visible et possible uniquement pour un admin.
 - Sécurité : règles Supabase RLS activées.
 
@@ -113,14 +113,6 @@ Configuration attendue :
 4. Version Node.js : 18 ou plus.
 5. Variable `PORT` : utiliser celle fournie par Hostinger si elle existe.
 6. Vérifier que le site peut charger les scripts externes, dont Supabase.
-
-Variable serveur à ajouter pour activer la connexion par pseudo :
-
-```text
-SUPABASE_SERVICE_ROLE_KEY=clé service_role du projet Supabase
-```
-
-Cette clé doit rester uniquement côté serveur Hostinger. Elle ne doit jamais être ajoutée dans `public/app.js`.
 
 Avant l’ouverture publique :
 

@@ -51,6 +51,7 @@ const userWelcome = document.querySelector("#userWelcome");
 const closeAdminDialog = document.querySelector("#closeAdminDialog");
 let searchDebounceTimer = null;
 let hasBootstrapped = false;
+let authRefreshQueue = Promise.resolve();
 
 const dateFormatter = new Intl.DateTimeFormat("fr-FR", {
   day: "numeric",
@@ -77,13 +78,21 @@ function showToast(message) {
   window.setTimeout(() => toast.classList.remove("is-visible"), 3200);
 }
 
+function withTimeout(promise, timeoutMs, label) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      reject(new Error(`${label} prend trop de temps. Vérifie ta connexion puis réessaie.`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timeoutId));
+}
+
 function friendlyAuthError(error) {
   const message = String(error?.message || "");
-  if (message.includes("Pseudo sign-in is not configured")) {
-    return "La connexion par pseudo doit encore être configurée côté serveur. Utilise ton email pour l'instant.";
-  }
   if (message.includes("Invalid login credentials")) {
-    return "Identifiant ou mot de passe incorrect. Si tu viens de créer ton compte, vérifie aussi tes emails.";
+    return "Email ou mot de passe incorrect. Si tu viens de créer ton compte, vérifie aussi tes emails.";
   }
   if (message.includes("Email not confirmed")) {
     return "Ton email n'est pas encore confirmé. Ouvre le lien reçu par email puis réessaie.";
@@ -102,28 +111,6 @@ function friendlyAuthError(error) {
 
 function isEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
-
-async function signInWithIdentifier(identifier, password) {
-  if (isEmail(identifier)) {
-    return supabaseClient.auth.signInWithPassword({ email: identifier, password });
-  }
-
-  const response = await fetch("/api/auth/sign-in", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ identifier, password })
-  });
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(payload.error || "Invalid login credentials");
-  }
-
-  return supabaseClient.auth.setSession({
-    access_token: payload.session.access_token,
-    refresh_token: payload.session.refresh_token
-  });
 }
 
 function mapRecipe(row) {
@@ -168,7 +155,10 @@ async function hydrateUserData() {
     return;
   }
 
-  const [profileResult, recipesResult] = await Promise.allSettled([loadProfile(), loadRecipes()]);
+  const [profileResult, recipesResult] = await Promise.allSettled([
+    withTimeout(loadProfile(), 10000, "Le chargement du profil"),
+    withTimeout(loadRecipes(), 10000, "Le chargement des recettes")
+  ]);
 
   if (profileResult.status === "rejected") {
     console.warn("Impossible de charger le profil", profileResult.reason);
@@ -196,7 +186,7 @@ async function loadRecipes() {
 }
 
 async function loadData() {
-  const { data, error } = await supabaseClient.auth.getSession();
+  const { data, error } = await withTimeout(supabaseClient.auth.getSession(), 10000, "La vérification de session");
   if (error) throw error;
 
   state.user = data.session?.user || null;
@@ -931,10 +921,10 @@ function updateAuthDialog() {
     ? "Choisis un pseudo, un email et un mot de passe pour publier tes recettes."
     : isReset
       ? "Entre ton email et Supabase t'enverra un lien de réinitialisation."
-      : "Indique ton pseudo ou ton email, puis ton mot de passe.";
-  authIdentifierLabel.textContent = isSignup || isReset ? "Email" : "Pseudo ou email";
-  adminEmail.placeholder = isSignup || isReset ? "ton@email.com" : "pseudo ou ton@email.com";
-  adminEmail.autocomplete = isSignup || isReset ? "email" : "username";
+      : "Connecte-toi avec ton email et ton mot de passe.";
+  authIdentifierLabel.textContent = "Email";
+  adminEmail.placeholder = "ton@email.com";
+  adminEmail.autocomplete = "email";
   displayNameField.hidden = !isSignup;
   passwordField.hidden = isReset;
   adminPassword.required = !isReset;
@@ -961,21 +951,17 @@ async function handleAuthSubmit(event) {
   authSubmitButton.disabled = true;
 
   try {
-    const identifier = adminEmail.value.trim();
+    const email = adminEmail.value.trim();
     const password = adminPassword.value;
     const displayName = displayNameInput.value.trim();
     let result;
 
-    if (!identifier) {
-      throw new Error("Indique ton pseudo ou ton email.");
+    if (!isEmail(email)) {
+      throw new Error("Indique une adresse email valide.");
     }
 
     if (state.authMode === "reset") {
-      if (!isEmail(identifier)) {
-        throw new Error("Pour réinitialiser ton mot de passe, indique ton email.");
-      }
-
-      const { error } = await supabaseClient.auth.resetPasswordForEmail(identifier, {
+      const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
         redirectTo: window.location.origin
       });
       if (error) throw error;
@@ -985,20 +971,16 @@ async function handleAuthSubmit(event) {
     }
 
     if (state.authMode === "signup") {
-      if (!isEmail(identifier)) {
-        throw new Error("Pour créer un compte, indique ton email.");
-      }
-
       result = await supabaseClient.auth.signUp({
-        email: identifier,
+        email,
         password,
         options: {
-          data: { display_name: displayName || identifier.split("@")[0] },
+          data: { display_name: displayName || email.split("@")[0] },
           emailRedirectTo: window.location.origin
         }
       });
     } else {
-      result = await signInWithIdentifier(identifier, password);
+      result = await supabaseClient.auth.signInWithPassword({ email, password });
     }
 
     if (result.error) throw result.error;
@@ -1016,6 +998,7 @@ async function handleAuthSubmit(event) {
     adminDialog.close();
     showToast(state.authMode === "signup" ? "Compte créé." : "Connexion réussie.");
     if (state.pendingAuthAction) state.pendingAuthAction();
+    else route();
     state.pendingAuthAction = null;
   } catch (error) {
     adminError.textContent = friendlyAuthError(error);
@@ -1042,6 +1025,17 @@ function route() {
   app.focus({ preventScroll: true });
 }
 
+function renderLoadingState() {
+  app.innerHTML = `
+    <div class="empty-state" aria-live="polite">
+      <div>
+        <h2>Chargement des recettes</h2>
+        <p class="muted">On vérifie ta session et on prépare le carnet.</p>
+      </div>
+    </div>
+  `;
+}
+
 function renderLoadError(error) {
   app.innerHTML = `
     <div class="empty-state">
@@ -1061,6 +1055,23 @@ function renderLoadError(error) {
       renderLoadError(retryError);
     }
   });
+}
+
+async function syncSession(session, options = {}) {
+  state.user = session?.user || null;
+  await hydrateUserData();
+  updateAdminUi();
+  if (options.render !== false) route();
+}
+
+function queueSessionSync(session) {
+  authRefreshQueue = authRefreshQueue
+    .catch(() => null)
+    .then(() => syncSession(session))
+    .catch((error) => {
+      console.error(error);
+      renderLoadError(error);
+    });
 }
 
 addRecipeButton?.addEventListener("click", () => {
@@ -1105,19 +1116,12 @@ adminForm?.addEventListener("submit", handleAuthSubmit);
 closeAdminDialog?.addEventListener("click", () => adminDialog.close());
 window.addEventListener("hashchange", route);
 
-supabaseClient.auth.onAuthStateChange(async (_event, session) => {
-  state.user = session?.user || null;
-  try {
-    await hydrateUserData();
-    updateAdminUi();
-    if (hasBootstrapped) route();
-  } catch (error) {
-    console.error(error);
-    state.profile = null;
-    updateAdminUi();
-    renderLoadError(error);
-  }
+supabaseClient.auth.onAuthStateChange((event, session) => {
+  if (!hasBootstrapped || event === "INITIAL_SESSION") return;
+  window.setTimeout(() => queueSessionSync(session), 0);
 });
+
+renderLoadingState();
 
 loadData()
   .then(() => {
