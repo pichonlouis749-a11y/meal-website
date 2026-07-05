@@ -2,7 +2,7 @@ const SUPABASE_URL = "https://hrwckkwdipilwkjjzyzf.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_wR-rYtiUnDYrPqjz9rHz5Q_qKYwXZUC";
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
-const tags = ["repas", "dessert", "protéiné", "rapide", "végétarien", "économique", "batch cooking"];
+const tags = ["repas", "dessert", "protéiné", "rapide", "végétarien", "économique", "batch cooking", "Mamounette"];
 
 const blankDraft = () => ({
   name: "",
