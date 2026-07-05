@@ -50,6 +50,7 @@ const signOutButton = document.querySelector("#signOutButton");
 const userWelcome = document.querySelector("#userWelcome");
 const closeAdminDialog = document.querySelector("#closeAdminDialog");
 let searchDebounceTimer = null;
+let hasBootstrapped = false;
 
 const dateFormatter = new Intl.DateTimeFormat("fr-FR", {
   day: "numeric",
@@ -78,8 +79,11 @@ function showToast(message) {
 
 function friendlyAuthError(error) {
   const message = String(error?.message || "");
+  if (message.includes("Pseudo sign-in is not configured")) {
+    return "La connexion par pseudo doit encore être configurée côté serveur. Utilise ton email pour l'instant.";
+  }
   if (message.includes("Invalid login credentials")) {
-    return "Email ou mot de passe incorrect. Si tu viens de créer ton compte, vérifie aussi tes emails.";
+    return "Identifiant ou mot de passe incorrect. Si tu viens de créer ton compte, vérifie aussi tes emails.";
   }
   if (message.includes("Email not confirmed")) {
     return "Ton email n'est pas encore confirmé. Ouvre le lien reçu par email puis réessaie.";
@@ -98,6 +102,28 @@ function friendlyAuthError(error) {
 
 function isEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+async function signInWithIdentifier(identifier, password) {
+  if (isEmail(identifier)) {
+    return supabaseClient.auth.signInWithPassword({ email: identifier, password });
+  }
+
+  const response = await fetch("/api/auth/sign-in", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identifier, password })
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Invalid login credentials");
+  }
+
+  return supabaseClient.auth.setSession({
+    access_token: payload.session.access_token,
+    refresh_token: payload.session.refresh_token
+  });
 }
 
 function mapRecipe(row) {
@@ -135,6 +161,29 @@ async function loadProfile() {
   state.profile = data;
 }
 
+async function hydrateUserData() {
+  if (!state.user) {
+    state.profile = null;
+    state.recipes = [];
+    return;
+  }
+
+  const [profileResult, recipesResult] = await Promise.allSettled([loadProfile(), loadRecipes()]);
+
+  if (profileResult.status === "rejected") {
+    console.warn("Impossible de charger le profil", profileResult.reason);
+    state.profile = {
+      id: state.user.id,
+      display_name: state.user.user_metadata?.display_name || state.user.email || "Compte",
+      role: "user"
+    };
+  }
+
+  if (recipesResult.status === "rejected") {
+    throw recipesResult.reason;
+  }
+}
+
 async function loadRecipes() {
   const { data, error } = await supabaseClient
     .from("recipes")
@@ -151,34 +200,37 @@ async function loadData() {
   if (error) throw error;
 
   state.user = data.session?.user || null;
-  if (state.user) {
-    await Promise.all([loadProfile(), loadRecipes()]);
-  } else {
-    state.profile = null;
-    state.recipes = [];
-  }
+  await hydrateUserData();
   updateAdminUi();
 }
 
 function updateAdminUi() {
   if (!state.user) {
-    adminStatusButton.textContent = "Connexion";
-    adminStatusButton.hidden = true;
-    addRecipeButton.hidden = true;
-    signOutButton.hidden = true;
-    userWelcome.hidden = true;
-    userWelcome.textContent = "";
-    adminStatusButton.classList.remove("is-admin");
+    if (adminStatusButton) {
+      adminStatusButton.textContent = "Connexion";
+      adminStatusButton.hidden = true;
+      adminStatusButton.classList.remove("is-admin");
+    }
+    if (addRecipeButton) addRecipeButton.hidden = true;
+    if (signOutButton) signOutButton.hidden = true;
+    if (userWelcome) {
+      userWelcome.hidden = true;
+      userWelcome.textContent = "";
+    }
     return;
   }
 
   const label = state.profile?.display_name || state.user.email || "Compte";
-  userWelcome.textContent = `Bienvenue ${label}`;
-  userWelcome.hidden = false;
-  adminStatusButton.hidden = true;
-  addRecipeButton.hidden = false;
-  signOutButton.hidden = false;
-  adminStatusButton.classList.toggle("is-admin", state.profile?.role === "admin");
+  if (userWelcome) {
+    userWelcome.textContent = `Bienvenue ${label}`;
+    userWelcome.hidden = false;
+  }
+  if (adminStatusButton) {
+    adminStatusButton.hidden = true;
+    adminStatusButton.classList.toggle("is-admin", state.profile?.role === "admin");
+  }
+  if (addRecipeButton) addRecipeButton.hidden = false;
+  if (signOutButton) signOutButton.hidden = false;
 }
 
 function collections() {
@@ -879,9 +931,9 @@ function updateAuthDialog() {
     ? "Choisis un pseudo, un email et un mot de passe pour publier tes recettes."
     : isReset
       ? "Entre ton email et Supabase t'enverra un lien de réinitialisation."
-      : "Connecte-toi avec ton email et ton mot de passe.";
-  authIdentifierLabel.textContent = "Email";
-  adminEmail.placeholder = "ton@email.com";
+      : "Indique ton pseudo ou ton email, puis ton mot de passe.";
+  authIdentifierLabel.textContent = isSignup || isReset ? "Email" : "Pseudo ou email";
+  adminEmail.placeholder = isSignup || isReset ? "ton@email.com" : "pseudo ou ton@email.com";
   adminEmail.autocomplete = isSignup || isReset ? "email" : "username";
   displayNameField.hidden = !isSignup;
   passwordField.hidden = isReset;
@@ -909,17 +961,21 @@ async function handleAuthSubmit(event) {
   authSubmitButton.disabled = true;
 
   try {
-    const email = adminEmail.value.trim();
+    const identifier = adminEmail.value.trim();
     const password = adminPassword.value;
     const displayName = displayNameInput.value.trim();
     let result;
 
-    if (!isEmail(email)) {
-      throw new Error("Utilise ton email pour te connecter. Le pseudo sert pour l'affichage des recettes.");
+    if (!identifier) {
+      throw new Error("Indique ton pseudo ou ton email.");
     }
 
     if (state.authMode === "reset") {
-      const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      if (!isEmail(identifier)) {
+        throw new Error("Pour réinitialiser ton mot de passe, indique ton email.");
+      }
+
+      const { error } = await supabaseClient.auth.resetPasswordForEmail(identifier, {
         redirectTo: window.location.origin
       });
       if (error) throw error;
@@ -929,16 +985,20 @@ async function handleAuthSubmit(event) {
     }
 
     if (state.authMode === "signup") {
+      if (!isEmail(identifier)) {
+        throw new Error("Pour créer un compte, indique ton email.");
+      }
+
       result = await supabaseClient.auth.signUp({
-        email,
+        email: identifier,
         password,
         options: {
-          data: { display_name: displayName || email.split("@")[0] },
+          data: { display_name: displayName || identifier.split("@")[0] },
           emailRedirectTo: window.location.origin
         }
       });
     } else {
-      result = await supabaseClient.auth.signInWithPassword({ email, password });
+      result = await signInWithIdentifier(identifier, password);
     }
 
     if (result.error) throw result.error;
@@ -951,7 +1011,7 @@ async function handleAuthSubmit(event) {
     }
 
     state.user = result.data.session?.user || result.data.user;
-    await Promise.all([loadProfile(), loadRecipes()]);
+    await hydrateUserData();
     updateAdminUi();
     adminDialog.close();
     showToast(state.authMode === "signup" ? "Compte créé." : "Connexion réussie.");
@@ -982,7 +1042,28 @@ function route() {
   app.focus({ preventScroll: true });
 }
 
-addRecipeButton.addEventListener("click", () => {
+function renderLoadError(error) {
+  app.innerHTML = `
+    <div class="empty-state">
+      <div>
+        <h2>Impossible de charger les recettes</h2>
+        <p class="muted">${escapeHtml(error.message || "Réessaie dans quelques instants.")}</p>
+        <p><button class="secondary-button" id="retryLoadButton" type="button">Réessayer</button></p>
+      </div>
+    </div>
+  `;
+
+  document.querySelector("#retryLoadButton").addEventListener("click", async () => {
+    try {
+      await loadData();
+      route();
+    } catch (retryError) {
+      renderLoadError(retryError);
+    }
+  });
+}
+
+addRecipeButton?.addEventListener("click", () => {
   if (state.user) {
     window.location.hash = "#/add";
   } else {
@@ -992,13 +1073,13 @@ addRecipeButton.addEventListener("click", () => {
   }
 });
 
-adminStatusButton.addEventListener("click", async () => {
+adminStatusButton?.addEventListener("click", async () => {
   if (!state.user) {
     requestAuth(null);
   }
 });
 
-signOutButton.addEventListener("click", async () => {
+signOutButton?.addEventListener("click", async () => {
   await supabaseClient.auth.signOut();
   state.user = null;
   state.profile = null;
@@ -1007,42 +1088,43 @@ signOutButton.addEventListener("click", async () => {
   route();
 });
 
-toggleAuthModeButton.addEventListener("click", () => {
+toggleAuthModeButton?.addEventListener("click", () => {
   state.authMode = state.authMode === "signin" ? "signup" : "signin";
   adminError.textContent = "";
   authSubmitButton.disabled = false;
   updateAuthDialog();
 });
 
-forgotPasswordButton.addEventListener("click", () => {
+forgotPasswordButton?.addEventListener("click", () => {
   state.authMode = "reset";
   adminError.textContent = "";
   updateAuthDialog();
 });
 
-adminForm.addEventListener("submit", handleAuthSubmit);
-closeAdminDialog.addEventListener("click", () => adminDialog.close());
+adminForm?.addEventListener("submit", handleAuthSubmit);
+closeAdminDialog?.addEventListener("click", () => adminDialog.close());
 window.addEventListener("hashchange", route);
 
 supabaseClient.auth.onAuthStateChange(async (_event, session) => {
   state.user = session?.user || null;
   try {
-    if (state.user) {
-      await Promise.all([loadProfile(), loadRecipes()]);
-    } else {
-      state.profile = null;
-      state.recipes = [];
-    }
+    await hydrateUserData();
     updateAdminUi();
-    route();
-  } catch {
+    if (hasBootstrapped) route();
+  } catch (error) {
+    console.error(error);
     state.profile = null;
     updateAdminUi();
+    renderLoadError(error);
   }
 });
 
 loadData()
-  .then(route)
+  .then(() => {
+    hasBootstrapped = true;
+    route();
+  })
   .catch((error) => {
-    app.innerHTML = `<div class="empty-state"><div><h2>Impossible de charger les recettes</h2><p class="muted">${escapeHtml(error.message)}</p></div></div>`;
+    hasBootstrapped = true;
+    renderLoadError(error);
   });
