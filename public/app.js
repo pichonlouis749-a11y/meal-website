@@ -7,6 +7,7 @@ const tags = ["repas", "dessert", "protéiné", "rapide", "végétarien", "écon
 const blankDraft = () => ({
   name: "",
   imageUrl: "",
+  servings: "",
   ingredients: [""],
   steps: [""],
   referenceUrl: "",
@@ -120,6 +121,8 @@ function mapRecipe(row) {
     authorId: row.author_id,
     name: row.name,
     imageUrl: row.image_url || "",
+    servings: row.servings || null,
+    authorName: row.author_name || "",
     ingredients: row.ingredients || [],
     steps: row.steps || [],
     referenceUrl: row.reference_url || "",
@@ -141,6 +144,7 @@ function draftFromRecipe(recipe) {
   return {
     name: recipe.name || "",
     imageUrl: recipe.imageUrl || "",
+    servings: recipe.servings ? String(recipe.servings) : "",
     ingredients: recipe.ingredients?.length ? [...recipe.ingredients] : [""],
     steps: recipe.steps?.length ? [...recipe.steps] : [""],
     referenceUrl: recipe.referenceUrl || "",
@@ -208,7 +212,7 @@ async function hydrateUserData() {
 async function loadRecipes() {
   const { data, error } = await supabaseClient
     .from("recipes")
-    .select("id, author_id, name, image_url, ingredients, steps, reference_url, tags, collection, created_at")
+    .select("id, author_id, author_name, name, image_url, servings, ingredients, steps, reference_url, tags, collection, created_at")
     .eq("is_published", true)
     .order("created_at", { ascending: false });
 
@@ -435,6 +439,7 @@ function renderDetail(id) {
         <div class="detail-content">
           <p class="eyebrow">Publié le ${escapeHtml(formatDate(recipe.publishedAt))}</p>
           <h1>${escapeHtml(recipe.name)}</h1>
+          <p class="muted">Créée par ${escapeHtml(recipe.authorName || "Compte utilisateur")}</p>
           <div class="tag-row" style="margin-top: 18px;">
             ${recipe.collection ? `<span class="collection-pill">${escapeHtml(recipe.collection)}</span>` : ""}
             ${recipe.tags.map((tag) => `<span class="tag-pill">${escapeHtml(tag)}</span>`).join("")}
@@ -447,6 +452,7 @@ function renderDetail(id) {
           <p class="eyebrow">Résumé</p>
           <div class="summary-grid">
             <span><strong>${recipe.ingredients.length}</strong> ingrédients</span>
+            ${recipe.servings ? `<span><strong>${recipe.servings}</strong> personne${recipe.servings > 1 ? "s" : ""}</span>` : ""}
             <span><strong>${recipe.steps.length || (recipe.referenceUrl ? 1 : 0)}</strong> ${recipe.steps.length ? "étapes" : "source"}</span>
           </div>
         </div>
@@ -567,6 +573,9 @@ function validateStep(stepIndex, draft = normalizedDraft()) {
     }
   }
   if (stepIndex === 2 && draft.ingredients.length === 0) errors.push("Ajoute au moins un ingrédient.");
+  if (stepIndex === 2 && String(state.draft.servings || "").trim() && !draft.servings) {
+    errors.push("Indique un nombre de personnes entier et supérieur à 0.");
+  }
   if (stepIndex === 3 && draft.steps.length === 0 && !draft.referenceUrl) {
     errors.push("Ajoute au moins une étape ou un lien vers la recette.");
   }
@@ -607,11 +616,20 @@ function requirementBadge(stepIndex) {
   return `<span class="requirement-badge ${modifier}">${label}</span>`;
 }
 
+function parseServings(value) {
+  const cleanValue = String(value || "").trim();
+  if (!cleanValue) return null;
+  const servings = Number(cleanValue);
+  if (!Number.isInteger(servings) || servings < 1) return null;
+  return servings;
+}
+
 function normalizedDraft() {
   return {
     ...state.draft,
     name: state.draft.name.trim(),
     imageUrl: state.draft.imageUrl.trim(),
+    servings: parseServings(state.draft.servings),
     ingredients: state.draft.ingredients.map((item) => item.trim()).filter(Boolean),
     steps: state.draft.steps.map((item) => item.trim()).filter(Boolean),
     referenceUrl: state.draft.referenceUrl.trim(),
@@ -701,6 +719,10 @@ function wizardStepTemplate() {
 
   if (state.wizardStep === 2) {
     return `
+      <label class="field">
+        <span>Nombre de personnes ${requirementBadge(1)}</span>
+        <input id="recipeServings" type="number" min="1" step="1" value="${escapeHtml(draft.servings)}" placeholder="Ex. 4">
+      </label>
       <div class="field">
         <span>Ingrédients ${requirementBadge(2)}</span>
         <div class="dynamic-list" id="ingredientsList">
@@ -755,6 +777,7 @@ function wizardStepTemplate() {
       <div>
         <p class="eyebrow">Vérification obligatoire</p>
         <h2>${escapeHtml(recipe.name || "Recette sans nom")}</h2>
+        ${recipe.servings ? `<p class="muted">Prévue pour ${recipe.servings} personne${recipe.servings > 1 ? "s" : ""}.</p>` : ""}
         <div class="tag-row" style="margin-top: 14px;">
           ${recipe.collection ? `<span class="collection-pill">${escapeHtml(recipe.collection)}</span>` : ""}
           ${recipe.tags.map((tag) => `<span class="tag-pill">${escapeHtml(tag)}</span>`).join("")}
@@ -853,6 +876,13 @@ function bindWizardEvents() {
     });
   }
 
+  const servingsInput = document.querySelector("#recipeServings");
+  if (servingsInput) {
+    servingsInput.addEventListener("input", (event) => {
+      state.draft.servings = event.target.value;
+    });
+  }
+
   document.querySelectorAll("[data-ingredient-index]").forEach((input) => {
     input.addEventListener("input", (event) => {
       state.draft.ingredients[Number(input.dataset.ingredientIndex)] = event.target.value;
@@ -943,6 +973,7 @@ async function saveRecipe() {
 
   const requiredChecks = [
     [recipe.name, "Le nom de la recette est obligatoire."],
+    [!String(state.draft.servings || "").trim() || Boolean(recipe.servings), "Indique un nombre de personnes entier et supérieur à 0."],
     [recipe.ingredients.length > 0, "Ajoute au moins un ingrédient."],
     [recipe.steps.length > 0 || recipe.referenceUrl, "Ajoute au moins une étape ou un lien vers la recette."],
     [recipe.tags.length > 0, "Sélectionne au moins un tag."]
@@ -960,6 +991,7 @@ async function saveRecipe() {
     const payload = {
       name: recipe.name,
       image_url: recipe.imageUrl || null,
+      servings: recipe.servings,
       ingredients: recipe.ingredients,
       steps: recipe.steps,
       reference_url: recipe.referenceUrl || null,
@@ -972,12 +1004,16 @@ async function saveRecipe() {
           .from("recipes")
           .update(payload)
           .eq("id", editingRecipe.id)
-          .select("id, author_id, name, image_url, ingredients, steps, reference_url, tags, collection, created_at")
+          .select("id, author_id, author_name, name, image_url, servings, ingredients, steps, reference_url, tags, collection, created_at")
           .single()
       : supabaseClient
           .from("recipes")
-          .insert({ ...payload, author_id: state.user.id })
-          .select("id, author_id, name, image_url, ingredients, steps, reference_url, tags, collection, created_at")
+          .insert({
+            ...payload,
+            author_id: state.user.id,
+            author_name: state.profile?.display_name || state.user.email || "Compte utilisateur"
+          })
+          .select("id, author_id, author_name, name, image_url, servings, ingredients, steps, reference_url, tags, collection, created_at")
           .single();
 
     const { data, error } = await query;
