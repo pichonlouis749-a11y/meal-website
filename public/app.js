@@ -149,7 +149,12 @@ async function loadData() {
   if (error) throw error;
 
   state.user = data.session?.user || null;
-  await Promise.all([loadProfile(), loadRecipes()]);
+  if (state.user) {
+    await Promise.all([loadProfile(), loadRecipes()]);
+  } else {
+    state.profile = null;
+    state.recipes = [];
+  }
   updateAdminUi();
 }
 
@@ -225,6 +230,25 @@ function recipeCard(recipe) {
       </div>
     </a>
   `;
+}
+
+function renderLockedHome() {
+  app.innerHTML = `
+    <section class="locked-shell" aria-labelledby="lockedTitle">
+      <div class="locked-card">
+        <p class="eyebrow">Accès privé</p>
+        <h1 id="lockedTitle">Connecte-toi pour accéder aux recettes.</h1>
+        <p class="muted">Le carnet est réservé aux comptes autorisés. Une fois connecté, tu retrouveras les recettes, la recherche et l’ajout.</p>
+        <div class="locked-actions">
+          <button class="primary-button" id="lockedLoginButton" type="button">Connexion</button>
+          <button class="secondary-button" id="lockedSignupButton" type="button">Créer un compte</button>
+        </div>
+      </div>
+    </section>
+  `;
+
+  document.querySelector("#lockedLoginButton").addEventListener("click", () => requestAuth(null));
+  document.querySelector("#lockedSignupButton").addEventListener("click", () => requestAuth(null, "signup"));
 }
 
 function renderHome(options = {}) {
@@ -855,9 +879,9 @@ function updateAuthDialog() {
   toggleAuthModeButton.textContent = isSignup || isReset ? "J'ai déjà un compte" : "Créer un compte";
 }
 
-function requestAuth(onSuccess) {
+function requestAuth(onSuccess, mode = "signin") {
   state.pendingAuthAction = onSuccess;
-  state.authMode = "signin";
+  state.authMode = mode;
   adminError.textContent = "";
   displayNameInput.value = "";
   adminEmail.value = "";
@@ -915,7 +939,7 @@ async function handleAuthSubmit(event) {
     }
 
     state.user = result.data.session?.user || result.data.user;
-    await loadProfile();
+    await Promise.all([loadProfile(), loadRecipes()]);
     updateAdminUi();
     adminDialog.close();
     showToast(state.authMode === "signup" ? "Compte créé." : "Connexion réussie.");
@@ -931,6 +955,12 @@ async function handleAuthSubmit(event) {
 function route() {
   const hash = window.location.hash || "#/";
   const recipeMatch = hash.match(/^#\/recipe\/(.+)$/);
+
+  if (!state.user) {
+    renderLockedHome();
+    app.focus({ preventScroll: true });
+    return;
+  }
 
   if (hash === "#/" || hash === "#") renderHome();
   else if (hash === "#/add") renderWizard();
@@ -984,7 +1014,12 @@ window.addEventListener("hashchange", route);
 supabaseClient.auth.onAuthStateChange(async (_event, session) => {
   state.user = session?.user || null;
   try {
-    await loadProfile();
+    if (state.user) {
+      await Promise.all([loadProfile(), loadRecipes()]);
+    } else {
+      state.profile = null;
+      state.recipes = [];
+    }
     updateAdminUi();
     route();
   } catch {

@@ -4,11 +4,12 @@ Application web de recettes avec comptes utilisateurs Supabase.
 
 ## Version actuelle
 
-- Les recettes publiques sont stockées dans Supabase.
+- Les recettes privées sont stockées dans Supabase.
 - Chaque utilisateur peut créer un compte avec email et mot de passe.
 - Un utilisateur connecté peut ajouter une recette.
 - La suppression des recettes est réservée à l’admin.
 - Un profil `admin` peut gérer toutes les recettes.
+- Les visiteurs non connectés ne peuvent pas accéder au contenu.
 - Les images sont encore ajoutées par URL pour garder cette version simple.
 
 ## Installation
@@ -64,7 +65,7 @@ Les règles de sécurité Supabase sont activées sur les deux tables.
 
 ## Fonctionnement des comptes
 
-- Toutes les recettes publiées sont visibles publiquement.
+- Les recettes sont visibles uniquement après connexion.
 - Le bouton “Ajouter une recette” demande une connexion si aucun compte n’est actif.
 - Après connexion, l’utilisateur peut publier une recette.
 - Le bouton de suppression apparaît seulement pour un admin.
@@ -93,7 +94,7 @@ Le formulaire d’ajout est guidé en 6 étapes :
 
 ## Vérifications V1
 
-- Accès public aux recettes : page d’accueil et pages détail.
+- Accès privé aux recettes : page d’accueil et pages détail visibles après connexion.
 - Recherche : nom, ingrédient, tag ou collection.
 - Filtres : tags et collection.
 - Ajout : accessible après connexion.
